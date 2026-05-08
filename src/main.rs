@@ -55,7 +55,7 @@ async fn main() -> anyhow::Result<()> {
             get(handlers::serve_attachment),
         );
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = TcpListener::bind(&addr).await?;
     tracing::info!("[upctl-svc] listening on {addr}");
     axum::serve(listener, app.into_make_service()).await?;
