@@ -41,6 +41,10 @@ async fn main() -> anyhow::Result<()> {
             post(handlers::gitea_close_ticket),
         )
         .route(
+            "/api/v2/ts/tickets/{id}/labels",
+            post(handlers::gitea_add_label),
+        )
+        .route(
             "/api/v2/ts/tickets/{id}/comments",
             post(handlers::gitea_add_comment),
         )
