@@ -257,6 +257,59 @@ pub async fn gitea_list_labels() -> Result<Json<HtyResponse<Vec<serde_json::Valu
     Ok(Json(wrap_ok_resp(labels)))
 }
 
+/// POST /api/v2/ts/tickets/{id}/labels — add labels to an issue
+#[derive(serde::Deserialize)]
+pub struct AddLabelsReq {
+    pub labels: Vec<i64>,
+}
+
+pub async fn gitea_add_label(
+    token: HtyToken,
+    Path(id): Path<String>,
+    Json(req): Json<AddLabelsReq>,
+) -> Result<Json<HtyResponse<serde_json::Value>>, StatusCode> {
+    let client = gitea_client();
+    let auth = config::gitea_auth_header();
+
+    let payload = serde_json::json!({
+        "labels": req.labels,
+    });
+
+    let resp = client
+        .post(format!(
+            "{}/repos/weli/tickets/issues/{id}/labels",
+            config::gitea_api_base()
+        ))
+        .header("Authorization", auth.as_str())
+        .header("Content-Type", "application/json")
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| {
+            tracing::warn!("[gitea_add_label] reqwest error: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    let status = resp.status();
+    let resp_body = resp.text().await.map_err(|e| {
+        tracing::warn!("[gitea_add_label] read body: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    if !status.is_success() {
+        tracing::warn!("[gitea_add_label] Gitea returned {status}: {resp_body}");
+        return Ok(Json(HtyResponse {
+            r: false,
+            d: None,
+            e: Some(format!("Gitea error {status}: {resp_body}")),
+            hty_err: None,
+        }));
+    }
+
+    let val: serde_json::Value = serde_json::from_str(&resp_body).unwrap_or_default();
+    Ok(Json(wrap_ok_resp(val)))
+}
+
 /// POST /api/v2/ts/tickets — create new issue
 pub async fn gitea_create_ticket(
     token: HtyToken,
