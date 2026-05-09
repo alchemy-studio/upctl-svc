@@ -188,7 +188,7 @@ fn ssh_cmd(
         c.arg(opt);
     }
     if let Some(j) = jump {
-        c.args([j, "ssh"]);
+        c.args(["-J", j]);
     }
     c.arg(host);
     c.arg("tmux");
