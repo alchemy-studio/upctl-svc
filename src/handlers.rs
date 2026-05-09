@@ -801,3 +801,122 @@ pub async fn serve_attachment(
 pub struct AttachmentQuery {
     pub jwt: Option<String>,
 }
+
+// ── Agent / tmux handlers ─────────────────────────────────────
+
+#[derive(serde::Deserialize)]
+pub struct TmuxSendReq {
+    pub keys: String,
+}
+
+/// GET /api/v2/upctl/api/tmux/{session} — capture tmux pane output
+pub async fn agent_capture(
+    Path(session): Path<String>,
+) -> Result<Json<HtyResponse<String>>, StatusCode> {
+    if !crate::agent::AgentBackend::validate_session(&session) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let backend = crate::agent::AgentBackend::from_env();
+    match backend.capture_pane(&session).await {
+        Ok(text) => Ok(Json(wrap_ok_resp(text))),
+        Err(e) => {
+            let msg = e.to_string();
+            Ok(Json(HtyResponse {
+                r: false,
+                d: None,
+                e: Some(msg),
+                hty_err: None,
+            }))
+        }
+    }
+}
+
+/// POST /api/v2/upctl/api/tmux/{session}/send — send keystrokes to tmux session
+pub async fn agent_send_keys(
+    Path(session): Path<String>,
+    Json(req): Json<TmuxSendReq>,
+) -> Result<Json<HtyResponse<String>>, StatusCode> {
+    if !crate::agent::AgentBackend::validate_session(&session) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let backend = crate::agent::AgentBackend::from_env();
+    match backend.send_keys(&session, &req.keys).await {
+        Ok(()) => Ok(Json(wrap_ok_resp("keys sent".to_string()))),
+        Err(e) => {
+            let msg = e.to_string();
+            Ok(Json(HtyResponse {
+                r: false,
+                d: None,
+                e: Some(msg),
+                hty_err: None,
+            }))
+        }
+    }
+}
+
+/// POST /api/v2/upctl/api/agent/prompt — send prompt to agent, wait, capture response
+#[derive(serde::Deserialize)]
+pub struct AgentPromptReq {
+    pub prompt: String,
+    pub session: Option<String>,
+    pub start_cmd: Option<String>,
+    #[serde(default = "default_wait_secs")]
+    pub wait_secs: u64,
+}
+
+fn default_wait_secs() -> u64 {
+    10
+}
+
+pub async fn agent_prompt(
+    Json(req): Json<AgentPromptReq>,
+) -> Result<Json<HtyResponse<String>>, StatusCode> {
+    let session = req
+        .session
+        .unwrap_or_else(|| std::env::var("TMUX_SESSION_NAME").unwrap_or_else(|_| "work".to_string()));
+
+    if !crate::agent::AgentBackend::validate_session(&session) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let backend = crate::agent::AgentBackend::from_env();
+
+    // Ensure session exists (creates if local mode and missing)
+    if let Err(e) = backend.ensure_session(&session, req.start_cmd.as_deref()).await {
+        let msg = format!("Agent session error: {e}");
+        return Ok(Json(HtyResponse {
+            r: false,
+            d: None,
+            e: Some(msg),
+            hty_err: None,
+        }));
+    }
+
+    // Send prompt (with trailing Enter / newline)
+    if let Err(e) = backend.send_keys(&session, &format!("{}\n", req.prompt)).await {
+        let msg = format!("Agent send error: {e}");
+        return Ok(Json(HtyResponse {
+            r: false,
+            d: None,
+            e: Some(msg),
+            hty_err: None,
+        }));
+    }
+
+    // Wait for processing
+    tokio::time::sleep(std::time::Duration::from_secs(req.wait_secs)).await;
+
+    // Capture response
+    match backend.capture_pane(&session).await {
+        Ok(text) => Ok(Json(wrap_ok_resp(text))),
+        Err(e) => {
+            let msg = e.to_string();
+            Ok(Json(HtyResponse {
+                r: false,
+                d: None,
+                e: Some(msg),
+                hty_err: None,
+            }))
+        }
+    }
+}

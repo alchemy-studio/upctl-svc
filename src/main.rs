@@ -1,5 +1,6 @@
 mod config;
 mod handlers;
+mod agent;
 
 use std::net::SocketAddr;
 
@@ -53,11 +54,24 @@ async fn main() -> anyhow::Result<()> {
             "/api/v2/upctl/api/upload_attachment",
             post(handlers::upload_attachment),
         )
-        .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
         .route(
             "/api/v2/upctl/api/attachment/{filename}",
             get(handlers::serve_attachment),
-        );
+        )
+        // Agent / tmux endpoints
+        .route(
+            "/api/v2/upctl/api/tmux/{session}",
+            get(handlers::agent_capture),
+        )
+        .route(
+            "/api/v2/upctl/api/tmux/{session}/send",
+            post(handlers::agent_send_keys),
+        )
+        .route(
+            "/api/v2/upctl/api/agent/prompt",
+            post(handlers::agent_prompt),
+        )
+        .layer(DefaultBodyLimit::max(10 * 1024 * 1024));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = TcpListener::bind(&addr).await?;
