@@ -503,6 +503,22 @@ pub async fn gitea_add_comment(
         }));
     }
 
+    // Lock check: approved or in_progress labels block comments
+    if let Some(labels) = issue_val["labels"].as_array() {
+        let lock_names = ["approved", "in_progress"];
+        let locked = labels.iter().any(|l| {
+            l["name"].as_str().map_or(false, |n| lock_names.contains(&n))
+        });
+        if locked {
+            return Ok(Json(HtyResponse {
+                r: false,
+                d: None,
+                e: Some("该工单已锁定，无法添加评论".to_string()),
+                hty_err: None,
+            }));
+        }
+    }
+
     let body = if let Some(ref name) = req.submitter_name {
         format!("> {} \n\n{}", name, req.body)
     } else {
