@@ -12,6 +12,5 @@ pub fn gitea_api_base() -> String {
 }
 
 pub fn gitea_auth_header() -> String {
-    env::var("GITEA_AUTH_HEADER")
-        .unwrap_or_else(|_| "Basic REPLACED".to_string())
+    env::var("GITEA_AUTH_HEADER").expect("GITEA_AUTH_HEADER env var must be set")
 }
