@@ -25,37 +25,37 @@ async fn main() -> anyhow::Result<()> {
         .route("/", get(|| async { "upctl-svc" }))
         // Ticket Gitea proxy
         .route(
-            "/api/v2/ts/tickets",
+            "/api/v2/upctl/api/tickets",
             get(handlers::gitea_list_tickets).post(handlers::gitea_create_ticket),
         )
         .route(
-            "/api/v2/ts/tickets/labels",
+            "/api/v2/upctl/api/tickets/labels",
             get(handlers::gitea_list_labels),
         )
         .route(
-            "/api/v2/ts/tickets/{id}",
+            "/api/v2/upctl/api/tickets/{id}",
             get(handlers::gitea_get_ticket).patch(handlers::gitea_update_ticket),
         )
         .route(
-            "/api/v2/ts/tickets/{id}/close",
+            "/api/v2/upctl/api/tickets/{id}/close",
             post(handlers::gitea_close_ticket),
         )
         .route(
-            "/api/v2/ts/tickets/{id}/labels",
+            "/api/v2/upctl/api/tickets/{id}/labels",
             post(handlers::gitea_add_label),
         )
         .route(
-            "/api/v2/ts/tickets/{id}/comments",
+            "/api/v2/upctl/api/tickets/{id}/comments",
             post(handlers::gitea_add_comment),
         )
         // Attachment upload/serve
         .route(
-            "/api/v2/ts/upload_attachment",
+            "/api/v2/upctl/api/upload_attachment",
             post(handlers::upload_attachment),
         )
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
         .route(
-            "/api/v2/ts/attachment/{filename}",
+            "/api/v2/upctl/api/attachment/{filename}",
             get(handlers::serve_attachment),
         );
 

@@ -144,7 +144,7 @@ pub struct AddCommentReq {
     pub submitter_name: Option<String>,
 }
 
-/// GET /api/v2/ts/tickets — list issues (proxy to Gitea)
+/// GET /api/v2/upctl/api/tickets — list issues (proxy to Gitea)
 pub async fn gitea_list_tickets(
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<HtyResponse<serde_json::Value>>, StatusCode> {
@@ -250,14 +250,14 @@ pub async fn gitea_list_tickets(
     }))))
 }
 
-/// GET /api/v2/ts/tickets/labels — list Gitea labels with colors
+/// GET /api/v2/upctl/api/tickets/labels — list Gitea labels with colors
 pub async fn gitea_list_labels() -> Result<Json<HtyResponse<Vec<serde_json::Value>>>, StatusCode> {
     let client = gitea_client();
     let labels = gitea_label_values(&client).await?;
     Ok(Json(wrap_ok_resp(labels)))
 }
 
-/// POST /api/v2/ts/tickets/{id}/labels — add labels to an issue
+/// POST /api/v2/upctl/api/tickets/{id}/labels — add labels to an issue
 #[derive(serde::Deserialize)]
 pub struct AddLabelsReq {
     pub labels: Vec<i64>,
@@ -310,7 +310,7 @@ pub async fn gitea_add_label(
     Ok(Json(wrap_ok_resp(val)))
 }
 
-/// POST /api/v2/ts/tickets — create new issue
+/// POST /api/v2/upctl/api/tickets — create new issue
 pub async fn gitea_create_ticket(
     token: HtyToken,
     Json(req): Json<CreateTicketReq>,
@@ -373,7 +373,7 @@ pub async fn gitea_create_ticket(
     Ok(Json(wrap_ok_resp(val)))
 }
 
-/// GET /api/v2/ts/tickets/{id} — get issue detail + comments
+/// GET /api/v2/upctl/api/tickets/{id} — get issue detail + comments
 pub async fn gitea_get_ticket(
     Path(id): Path<String>,
 ) -> Result<Json<HtyResponse<serde_json::Value>>, StatusCode> {
@@ -466,7 +466,7 @@ pub async fn gitea_get_ticket(
     Ok(Json(wrap_ok_resp(combined)))
 }
 
-/// POST /api/v2/ts/tickets/{id}/comments — add comment
+/// POST /api/v2/upctl/api/tickets/{id}/comments — add comment
 pub async fn gitea_add_comment(
     Path(id): Path<String>,
     Json(req): Json<AddCommentReq>,
@@ -545,7 +545,7 @@ pub async fn gitea_add_comment(
     Ok(Json(wrap_ok_resp(val)))
 }
 
-/// PATCH /api/v2/ts/tickets/{id} — update issue (labels, state)
+/// PATCH /api/v2/upctl/api/tickets/{id} — update issue (labels, state)
 pub async fn gitea_update_ticket(
     Path(id): Path<String>,
     token: HtyToken,
@@ -648,7 +648,7 @@ pub async fn gitea_update_ticket(
     ))
 }
 
-/// POST /api/v2/ts/tickets/{id}/close — close issue and remove in_progress label
+/// POST /api/v2/upctl/api/tickets/{id}/close — close issue and remove in_progress label
 pub async fn gitea_close_ticket(
     Path(id): Path<String>,
     token: HtyToken,
@@ -703,7 +703,7 @@ pub async fn gitea_close_ticket(
     Ok(Json(wrap_ok_resp(serde_json::json!({"ok": true}))))
 }
 
-/// POST /api/v2/ts/upload_attachment — upload image to local storage
+/// POST /api/v2/upctl/api/upload_attachment — upload image to local storage
 pub async fn upload_attachment(
     headers: HeaderMap,
     body: Bytes,
@@ -746,11 +746,11 @@ pub async fn upload_attachment(
     );
 
     Ok(Json(wrap_ok_resp(serde_json::json!(
-        {"url": format!("/api/v2/ts/attachment/{filename}"), "uuid": uuid}
+        {"url": format!("/api/v2/upctl/api/attachment/{filename}"), "uuid": uuid}
     ))))
 }
 
-/// GET /api/v2/ts/attachment/{filename} — serve uploaded file (requires JWT query param)
+/// GET /api/v2/upctl/api/attachment/{filename} — serve uploaded file (requires JWT query param)
 pub async fn serve_attachment(
     Path(filename): Path<String>,
     Query(params): Query<AttachmentQuery>,
