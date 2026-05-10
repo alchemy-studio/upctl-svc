@@ -36,6 +36,32 @@ fn gitea_client() -> reqwest::Client {
         .expect("gitea client")
 }
 
+/// Archive a Gitea repository by name (e.g. "huike-back").
+/// Only works for repos on ci.moicen.com owned by "weli".
+async fn archive_gitea_repo(repo_name: &str) -> Result<(), String> {
+    let client = gitea_client();
+    let auth = config::gitea_auth_header();
+    let url = format!(
+        "{}/repos/weli/{repo_name}",
+        config::gitea_api_base()
+    );
+    let payload = serde_json::json!({"archived": true});
+    let resp = client
+        .patch(&url)
+        .header("Authorization", auth.as_str())
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("reqwest: {e}"))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Gitea {status}: {body}"));
+    }
+    tracing::info!("[archive_gitea_repo] archived weli/{repo_name}");
+    Ok(())
+}
+
 async fn gitea_label_values(
     client: &reqwest::Client,
 ) -> Result<Vec<serde_json::Value>, StatusCode> {
@@ -1421,6 +1447,20 @@ pub async fn update_project(
     }
     if let Some(val) = req.is_archived {
         projects[idx].is_archived = val;
+        // When archiving a Gitea-hosted project, also archive the repo
+        if val {
+            if let Some(ref repo_url) = projects[idx].repo_url {
+                if repo_url.contains("ci.moicen.com/weli/") {
+                    let repo_name = repo_url.rsplit('/').next().unwrap_or("");
+                    if !repo_name.is_empty() {
+                        let result = archive_gitea_repo(repo_name).await;
+                        if let Err(e) = result {
+                            tracing::warn!("[update_project] failed to archive Gitea repo {repo_name}: {e}");
+                        }
+                    }
+                }
+            }
+        }
     }
     projects[idx].updated_at = now.clone();
     write_projects(&projects).await?;
