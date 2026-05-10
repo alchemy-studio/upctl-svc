@@ -20,3 +20,7 @@ pub fn jwt_key() -> Vec<u8> {
         .expect("JWT_KEY env var must be set")
         .into_bytes()
 }
+
+pub fn data_dir() -> String {
+    env::var("DATA_DIR").unwrap_or_else(|_| "./data".to_string())
+}

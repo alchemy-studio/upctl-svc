@@ -5,7 +5,7 @@ mod agent;
 use std::net::SocketAddr;
 
 use axum::extract::DefaultBodyLimit;
-use axum::routing::{get, post};
+use axum::routing::{get, patch, post};
 use axum::Router;
 use tokio::net::TcpListener;
 
@@ -57,6 +57,15 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/v2/upctl/api/attachment/{filename}",
             get(handlers::serve_attachment),
+        )
+        // Project management
+        .route(
+            "/api/v2/upctl/api/projects",
+            get(handlers::list_projects).post(handlers::create_project),
+        )
+        .route(
+            "/api/v2/upctl/api/projects/{id}",
+            patch(handlers::update_project).delete(handlers::delete_project),
         )
         // Agent / tmux endpoints
         .route(

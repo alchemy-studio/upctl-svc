@@ -964,3 +964,140 @@ pub async fn agent_prompt(
         }
     }
 }
+
+// ── Project management ─────────────────────────────────────────
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct Project {
+    pub id: String,
+    pub name: String,
+    pub repo_url: Option<String>,
+    pub memory_doc: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(serde::Deserialize)]
+pub struct CreateProjectReq {
+    pub name: String,
+    pub repo_url: Option<String>,
+    pub memory_doc: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct UpdateProjectReq {
+    pub name: Option<String>,
+    pub repo_url: Option<String>,
+    pub memory_doc: Option<String>,
+}
+
+fn projects_path() -> std::path::PathBuf {
+    std::path::Path::new(&crate::config::data_dir()).join("projects.json")
+}
+
+async fn read_projects() -> Result<Vec<Project>, StatusCode> {
+    let path = projects_path();
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let data = tokio::fs::read_to_string(&path).await.map_err(|e| {
+        tracing::warn!("[projects] read error: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    serde_json::from_str(&data).map_err(|e| {
+        tracing::warn!("[projects] parse error: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })
+}
+
+async fn write_projects(projects: &[Project]) -> Result<(), StatusCode> {
+    let path = projects_path();
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent).await.map_err(|e| {
+            tracing::warn!("[projects] create dir error: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    }
+    let data = serde_json::to_string_pretty(projects).map_err(|e| {
+        tracing::warn!("[projects] serialize error: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    tokio::fs::write(&path, &data).await.map_err(|e| {
+        tracing::warn!("[projects] write error: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    Ok(())
+}
+
+/// GET /api/v2/upctl/api/projects — list all projects
+pub async fn list_projects() -> Json<HtyResponse<Vec<Project>>> {
+    let projects = read_projects().await.unwrap_or_default();
+    Json(wrap_ok_resp(projects))
+}
+
+/// POST /api/v2/upctl/api/projects — create a project (ADMIN only)
+pub async fn create_project(
+    token: HtyToken,
+    Json(req): Json<CreateProjectReq>,
+) -> Result<Json<HtyResponse<serde_json::Value>>, StatusCode> {
+    if !is_system_admin(&token) {
+        return Ok(Json(forbidden_resp("Admin role required")));
+    }
+    let mut projects = read_projects().await?;
+    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let project = Project {
+        id: uuid::Uuid::new_v4().to_string(),
+        name: req.name,
+        repo_url: req.repo_url,
+        memory_doc: req.memory_doc,
+        created_at: now.clone(),
+        updated_at: now,
+    };
+    projects.push(project.clone());
+    write_projects(&projects).await?;
+    Ok(Json(wrap_ok_resp(serde_json::json!(project))))
+}
+
+/// PATCH /api/v2/upctl/api/projects/{id} — update a project (ADMIN only)
+pub async fn update_project(
+    token: HtyToken,
+    Path(id): Path<String>,
+    Json(req): Json<UpdateProjectReq>,
+) -> Result<Json<HtyResponse<serde_json::Value>>, StatusCode> {
+    if !is_system_admin(&token) {
+        return Ok(Json(forbidden_resp("Admin role required")));
+    }
+    let mut projects = read_projects().await?;
+    let idx = projects.iter().position(|p| p.id == id)
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    if let Some(name) = req.name {
+        projects[idx].name = name;
+    }
+    if req.repo_url.is_some() {
+        projects[idx].repo_url = req.repo_url;
+    }
+    if req.memory_doc.is_some() {
+        projects[idx].memory_doc = req.memory_doc;
+    }
+    projects[idx].updated_at = now.clone();
+    write_projects(&projects).await?;
+    Ok(Json(wrap_ok_resp(serde_json::json!(projects[idx]))))
+}
+
+/// DELETE /api/v2/upctl/api/projects/{id} — delete a project (ADMIN only)
+pub async fn delete_project(
+    token: HtyToken,
+    Path(id): Path<String>,
+) -> Result<Json<HtyResponse<serde_json::Value>>, StatusCode> {
+    if !is_system_admin(&token) {
+        return Ok(Json(forbidden_resp("Admin role required")));
+    }
+    let mut projects = read_projects().await?;
+    let idx = projects.iter().position(|p| p.id == id)
+        .ok_or(StatusCode::NOT_FOUND)?;
+    projects.remove(idx);
+    write_projects(&projects).await?;
+    Ok(Json(wrap_ok_resp(serde_json::json!({"ok": true}))))
+}
