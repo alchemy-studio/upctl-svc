@@ -210,10 +210,26 @@ pub async fn gitea_list_tickets(
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
 
-    let mut tickets: Vec<serde_json::Value> = serde_json::from_str(&body).map_err(|e| {
+    let all_tickets: Vec<serde_json::Value> = serde_json::from_str(&body).map_err(|e| {
         tracing::warn!("[gitea_list_tickets] parse: {e} body={body}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+
+    // Filter out E2E test tickets when hide_e2e=true
+    let hide_e2e = params.get("hide_e2e").map(|s| s.as_str() == "true").unwrap_or(false);
+    let mut tickets: Vec<serde_json::Value> = if hide_e2e {
+        all_tickets
+            .into_iter()
+            .filter(|t| {
+                t.get("title")
+                    .and_then(|v| v.as_str())
+                    .map(|title| !title.starts_with("E2E"))
+                    .unwrap_or(true)
+            })
+            .collect()
+    } else {
+        all_tickets
+    };
 
     for ticket in &mut tickets {
         let submitter: Option<String> = ticket
