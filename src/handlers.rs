@@ -1081,7 +1081,7 @@ pub async fn agent_prompt(
     if req.dry_run {
         return Ok(Json(HtyResponse {
             r: true,
-            d: Some(json!({
+            d: Some(serde_json::json!({
                 "assembled_prompt": final_prompt,
                 "session": session,
                 "ticket_number": req.ticket_number,
