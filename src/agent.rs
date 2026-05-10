@@ -73,6 +73,19 @@ impl AgentBackend {
         }
     }
 
+    /// Send a prompt to the agent TUI with two-step submit.
+    /// First types the text, then presses Enter separately — avoids
+    /// timing issues with DeepSeek TUI where text+Enter in one send-keys
+    /// leaves the prompt in draft without submitting.
+    pub async fn send_prompt(&self, session: &str, prompt: &str) -> Result<(), AgentError> {
+        // Step 1: type the prompt text
+        self.send_keys(session, prompt).await?;
+        // Brief pause to let the TUI process the text input
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        // Step 2: press Enter to submit
+        self.send_keys(session, "Enter").await
+    }
+
     /// Capture pane output from a tmux session (last 200 lines).
     pub async fn capture_pane(&self, session: &str) -> Result<String, AgentError> {
         match self {

@@ -1075,8 +1075,8 @@ pub async fn agent_prompt(
         }));
     }
 
-    // Send prompt (with trailing Enter / newline)
-    if let Err(e) = backend.send_keys(&session, &format!("{final_prompt}\n")).await {
+    // Send prompt (two-step: text first, then Enter — for DeepSeek TUI compatibility)
+    if let Err(e) = backend.send_prompt(&session, &final_prompt).await {
         let msg = format!("Agent send error: {e}");
         return Ok(Json(HtyResponse {
             r: false,
