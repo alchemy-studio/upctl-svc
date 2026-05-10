@@ -14,3 +14,9 @@ pub fn gitea_api_base() -> String {
 pub fn gitea_auth_header() -> String {
     env::var("GITEA_AUTH_HEADER").expect("GITEA_AUTH_HEADER env var must be set")
 }
+
+pub fn jwt_key() -> Vec<u8> {
+    env::var("JWT_KEY")
+        .expect("JWT_KEY env var must be set")
+        .into_bytes()
+}
