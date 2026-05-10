@@ -247,7 +247,7 @@ pub async fn gitea_list_tickets(
 
     Ok(Json(wrap_ok_resp(serde_json::json!({
         "tickets": tickets,
-        "claude_prompt_prefix": "不要进入plan mode，直接干活\n\n",
+        "claude_prompt_prefix": config::claude_prompt_prefix(),
     }))))
 }
 
@@ -265,7 +265,7 @@ pub struct AddLabelsReq {
 }
 
 pub async fn gitea_add_label(
-    token: HtyToken,
+    _token: HtyToken,
     Path(id): Path<String>,
     Json(req): Json<AddLabelsReq>,
 ) -> Result<Json<HtyResponse<serde_json::Value>>, StatusCode> {
@@ -461,7 +461,7 @@ pub async fn gitea_get_ticket(
     let combined = serde_json::json!({
         "issue": issue_val,
         "comments": comments_val,
-        "claude_prompt_prefix": "不要进入plan mode，直接干活\n\n",
+        "claude_prompt_prefix": config::claude_prompt_prefix(),
     });
 
     Ok(Json(wrap_ok_resp(combined)))
@@ -1130,6 +1130,42 @@ pub async fn agent_prompt(
                 hty_err: None,
             }))
         }
+    }
+}
+
+// ── Prompt prefix management ───────────────────────────────────
+
+/// GET /api/v2/upctl/api/config/prompt-prefix — read current prompt prefix
+pub async fn get_prompt_prefix() -> Json<HtyResponse<serde_json::Value>> {
+    let prefix = config::claude_prompt_prefix();
+    Json(wrap_ok_resp(serde_json::json!({
+        "prefix": prefix,
+    })))
+}
+
+/// PUT /api/v2/upctl/api/config/prompt-prefix — update prompt prefix (ADMIN only)
+#[derive(serde::Deserialize)]
+pub struct SetPromptPrefixReq {
+    pub prefix: String,
+}
+
+pub async fn set_prompt_prefix(
+    token: HtyToken,
+    Json(req): Json<SetPromptPrefixReq>,
+) -> Result<Json<HtyResponse<serde_json::Value>>, StatusCode> {
+    if !is_system_admin(&token) {
+        return Ok(Json(forbidden_resp("Admin role required")));
+    }
+    match config::set_claude_prompt_prefix(&req.prefix) {
+        Ok(actual) => Ok(Json(wrap_ok_resp(serde_json::json!({
+            "prefix": actual,
+        })))),
+        Err(e) => Ok(Json(HtyResponse {
+            r: false,
+            d: None,
+            e: Some(format!("Failed to save: {e}")),
+            hty_err: None,
+        })),
     }
 }
 

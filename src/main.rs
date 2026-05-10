@@ -80,6 +80,11 @@ async fn main() -> anyhow::Result<()> {
             "/api/v2/upctl/api/agent/prompt",
             post(handlers::agent_prompt),
         )
+        // Config: custom prompt prefix
+        .route(
+            "/api/v2/upctl/api/config/prompt-prefix",
+            get(handlers::get_prompt_prefix).put(handlers::set_prompt_prefix),
+        )
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));

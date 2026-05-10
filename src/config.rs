@@ -25,8 +25,40 @@ pub fn data_dir() -> String {
     env::var("DATA_DIR").unwrap_or_else(|_| "./data".to_string())
 }
 
+/// Read the stored prompt prefix from disk.
+/// Falls back to env var `AGENT_PROMPT_PREFIX`, then to the hardcoded default.
 pub fn claude_prompt_prefix() -> String {
+    // Try stored file first
+    let path = std::path::Path::new(&data_dir()).join("prompt_prefix.txt");
+    if path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            let trimmed = content.trim().to_string();
+            if !trimmed.is_empty() {
+                return trimmed + "\n\n";
+            }
+        }
+    }
+    // Fall back to env var
     env::var("AGENT_PROMPT_PREFIX").unwrap_or_else(|_| "不要进入plan mode，直接干活\n\n".to_string())
+}
+
+/// Persist a custom prompt prefix to disk.
+/// Returns the actual prefix that will be used (with trailing newlines).
+pub fn set_claude_prompt_prefix(text: &str) -> std::io::Result<String> {
+    let data_dir = data_dir();
+    let dir = std::path::Path::new(&data_dir);
+    std::fs::create_dir_all(dir)?;
+    let path = dir.join("prompt_prefix.txt");
+    let trimmed = text.trim();
+    std::fs::write(&path, trimmed)?;
+    let result = if trimmed.is_empty() {
+        // If empty, remove the file and use default
+        let _ = std::fs::remove_file(&path);
+        env::var("AGENT_PROMPT_PREFIX").unwrap_or_else(|_| "不要进入plan mode，直接干活\n\n".to_string())
+    } else {
+        format!("{trimmed}\n\n")
+    };
+    Ok(result)
 }
 
 pub fn agent_memory_dir() -> String {
