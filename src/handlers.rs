@@ -1309,6 +1309,8 @@ pub struct Project {
     pub memory_doc: Option<String>,
     #[serde(default)]
     pub is_open_source: bool,
+    #[serde(default)]
+    pub is_archived: bool,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -1320,6 +1322,8 @@ pub struct CreateProjectReq {
     pub memory_doc: Option<String>,
     #[serde(default)]
     pub is_open_source: bool,
+    #[serde(default)]
+    pub is_archived: bool,
 }
 
 #[derive(serde::Deserialize)]
@@ -1328,6 +1332,7 @@ pub struct UpdateProjectReq {
     pub repo_url: Option<String>,
     pub memory_doc: Option<String>,
     pub is_open_source: Option<bool>,
+    pub is_archived: Option<bool>,
 }
 
 fn projects_path() -> std::path::PathBuf {
@@ -1390,6 +1395,7 @@ pub async fn create_project(
         repo_url: req.repo_url,
         memory_doc: req.memory_doc,
         is_open_source: req.is_open_source,
+        is_archived: req.is_archived,
         created_at: now.clone(),
         updated_at: now,
     };
@@ -1423,6 +1429,9 @@ pub async fn update_project(
     }
     if let Some(val) = req.is_open_source {
         projects[idx].is_open_source = val;
+    }
+    if let Some(val) = req.is_archived {
+        projects[idx].is_archived = val;
     }
     projects[idx].updated_at = now.clone();
     write_projects(&projects).await?;
