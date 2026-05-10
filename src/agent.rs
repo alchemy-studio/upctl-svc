@@ -67,7 +67,10 @@ impl AgentBackend {
                 tmux_cmd(&["send-keys", "-t", session, keys]).await
             }
             AgentBackend::Ssh { host, jump, opts } => {
-                tmux_cmd_ssh(host, jump.as_deref(), opts, &["send-keys", "-t", session, keys])
+                // Shell-escape the keys to prevent fish/bash from interpreting
+                // special characters (>, <, |, $, newlines, etc.) as commands.
+                let escaped = shell_escape_for_ssh(keys);
+                tmux_cmd_ssh(host, jump.as_deref(), opts, &["send-keys", "-t", session, &escaped])
                     .await
             }
         }
@@ -189,6 +192,15 @@ async fn tmux_cmd_output(args: &[&str]) -> Result<String, AgentError> {
 }
 
 // ── SSH tmux helpers ──────────────────────────────────────────
+
+/// Wrap text in single quotes for safe passage through the remote shell.
+/// Single quotes prevent ALL shell interpretation (variable expansion,
+/// globbing, redirection).  Embedded single quotes are handled with
+/// the standard '\'' (end quote, escaped quote, resume quote) sequence.
+fn shell_escape_for_ssh(text: &str) -> String {
+    let escaped = text.replace('\'', "'\\''");
+    format!("'{}'", escaped)
+}
 
 fn ssh_cmd(
     host: &str,
