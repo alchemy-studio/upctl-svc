@@ -855,8 +855,12 @@ pub struct TmuxSendReq {
 
 /// GET /api/v2/upctl/api/tmux/{session} — capture tmux pane output
 pub async fn agent_capture(
+    token: HtyToken,
     Path(session): Path<String>,
 ) -> Result<Json<HtyResponse<String>>, StatusCode> {
+    if !is_admin_or_tester(&token) {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
     if !crate::agent::AgentBackend::validate_session(&session) {
         return Err(StatusCode::BAD_REQUEST);
     }
@@ -877,9 +881,13 @@ pub async fn agent_capture(
 
 /// POST /api/v2/upctl/api/tmux/{session}/send — send keystrokes to tmux session
 pub async fn agent_send_keys(
+    token: HtyToken,
     Path(session): Path<String>,
     Json(req): Json<TmuxSendReq>,
 ) -> Result<Json<HtyResponse<String>>, StatusCode> {
+    if !is_admin_or_tester(&token) {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
     if !crate::agent::AgentBackend::validate_session(&session) {
         return Err(StatusCode::BAD_REQUEST);
     }
@@ -1021,8 +1029,12 @@ async fn build_ticket_context(ticket_number: i64) -> Result<String, StatusCode> 
 }
 
 pub async fn agent_prompt(
+    token: HtyToken,
     Json(req): Json<AgentPromptReq>,
 ) -> Result<Json<HtyResponse<String>>, StatusCode> {
+    if !is_admin_or_tester(&token) {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
     let session = req
         .session
         .unwrap_or_else(|| std::env::var("TMUX_SESSION_NAME").or_else(|_| std::env::var("TMUX_DEFAULT_SESSION")).unwrap_or_else(|_| "deepseek".to_string()));
