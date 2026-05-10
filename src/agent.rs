@@ -95,13 +95,16 @@ impl AgentBackend {
     }
 
     /// Send a prompt to the agent TUI with two-step submit.
-    /// First types the text (literal mode), then presses Enter separately.
+    /// First types the text (literal mode), then presses Enter twice for reliability.
     pub async fn send_prompt(&self, session: &str, prompt: &str) -> Result<(), AgentError> {
         // Step 1: type the prompt text (literal mode — handles -, [, etc.)
         self.send_keys(session, prompt, true).await?;
         // Brief pause to let the TUI process the text input
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         // Step 2: press Enter to submit (NOT literal — "Enter" is a key name)
+        self.send_keys(session, "Enter", false).await?;
+        // Extra Enter to ensure the prompt is submitted even if the first one was eaten
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         self.send_keys(session, "Enter", false).await
     }
 
