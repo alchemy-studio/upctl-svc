@@ -14,6 +14,21 @@ use crate::config;
 
 type LabelMap = HashMap<String, i64>;
 
+/// Simple URL percent-encoding for query parameters.
+fn urlencoding(s: &str) -> String {
+    let mut result = String::new();
+    for byte in s.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                result.push(byte as char);
+            }
+            b' ' => result.push_str("%20"),
+            _ => result.push_str(&format!("%{:02X}", byte)),
+        }
+    }
+    result
+}
+
 fn gitea_client() -> reqwest::Client {
     reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
@@ -162,6 +177,10 @@ pub async fn gitea_list_tickets(
 
     if let Some(labels) = params.get("labels") {
         url = format!("{url}&labels={labels}");
+    }
+
+    if let Some(q) = params.get("q") {
+        url = format!("{url}&q={}", urlencoding(&q));
     }
 
     if state == "closed" {
