@@ -916,6 +916,9 @@ pub struct AgentPromptReq {
     pub ticket_number: Option<i64>,
     #[serde(default = "default_wait_secs")]
     pub wait_secs: u64,
+    /// Dry-run mode: assemble the prompt but don't send to agent. Returns the assembled prompt.
+    #[serde(default)]
+    pub dry_run: bool,
 }
 
 fn default_wait_secs() -> u64 {
@@ -1073,6 +1076,20 @@ pub async fn agent_prompt(
             req.prompt,
         )
     };
+
+    // Dry-run mode: return the assembled prompt without sending to agent
+    if req.dry_run {
+        return Ok(Json(HtyResponse {
+            r: true,
+            d: Some(json!({
+                "assembled_prompt": final_prompt,
+                "session": session,
+                "ticket_number": req.ticket_number,
+            }).to_string()),
+            e: None,
+            hty_err: None,
+        }));
+    }
 
     let backend = crate::agent::AgentBackend::from_env();
 
