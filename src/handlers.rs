@@ -311,6 +311,47 @@ pub async fn gitea_add_label(
     Ok(Json(wrap_ok_resp(val)))
 }
 
+/// DELETE /api/v2/upctl/api/tickets/{id}/labels/{label_id}
+pub async fn gitea_remove_label(
+    _token: HtyToken,
+    Path((id, label_id)): Path<(String, String)>,
+) -> Result<Json<HtyResponse<serde_json::Value>>, StatusCode> {
+    let client = gitea_client();
+    let auth = config::gitea_auth_header();
+
+    let resp = client
+        .delete(format!(
+            "{}/repos/weli/tickets/issues/{id}/labels/{label_id}",
+            config::gitea_api_base()
+        ))
+        .header("Authorization", auth.as_str())
+        .send()
+        .await
+        .map_err(|e| {
+            tracing::warn!("[gitea_remove_label] reqwest error: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let resp_body = resp.text().await.unwrap_or_default();
+        tracing::warn!("[gitea_remove_label] Gitea returned {status}: {resp_body}");
+        return Ok(Json(HtyResponse {
+            r: false,
+            d: None,
+            e: Some(format!("Gitea error {status}: {resp_body}")),
+            hty_err: None,
+        }));
+    }
+
+    Ok(Json(HtyResponse {
+        r: true,
+        d: Some(serde_json::json!({"removed": true})),
+        e: None,
+        hty_err: None,
+    }))
+}
+
 /// POST /api/v2/upctl/api/tickets — create new issue
 pub async fn gitea_create_ticket(
     token: HtyToken,

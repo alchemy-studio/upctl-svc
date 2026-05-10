@@ -46,6 +46,10 @@ async fn main() -> anyhow::Result<()> {
             post(handlers::gitea_add_label),
         )
         .route(
+            "/api/v2/upctl/api/tickets/{id}/labels/{label_id}",
+            get(handlers::gitea_remove_label).delete(handlers::gitea_remove_label),
+        )
+        .route(
             "/api/v2/upctl/api/tickets/{id}/comments",
             post(handlers::gitea_add_comment),
         )
