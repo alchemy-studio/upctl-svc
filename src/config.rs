@@ -24,3 +24,7 @@ pub fn jwt_key() -> Vec<u8> {
 pub fn data_dir() -> String {
     env::var("DATA_DIR").unwrap_or_else(|_| "./data".to_string())
 }
+
+pub fn claude_prompt_prefix() -> String {
+    env::var("AGENT_PROMPT_PREFIX").unwrap_or_else(|_| "不要进入plan mode，直接干活\n\n".to_string())
+}

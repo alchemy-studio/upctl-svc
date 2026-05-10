@@ -904,6 +904,8 @@ pub struct AgentPromptReq {
     pub prompt: String,
     pub session: Option<String>,
     pub start_cmd: Option<String>,
+    /// Optional ticket number — when provided, ticket + project context is prepended to the prompt
+    pub ticket_number: Option<i64>,
     #[serde(default = "default_wait_secs")]
     pub wait_secs: u64,
 }
@@ -912,16 +914,136 @@ fn default_wait_secs() -> u64 {
     10
 }
 
+/// Build a context string from a Gitea ticket and linked projects.
+async fn build_ticket_context(ticket_number: i64) -> Result<String, StatusCode> {
+    let client = gitea_client();
+    let auth = config::gitea_auth_header();
+
+    // Fetch issue
+    let issue_resp = client
+        .get(format!(
+            "{}/repos/weli/tickets/issues/{ticket_number}",
+            config::gitea_api_base()
+        ))
+        .header("Authorization", auth.as_str())
+        .send()
+        .await
+        .map_err(|e| {
+            tracing::warn!("[build_ticket_context] fetch error: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    let issue_val: serde_json::Value = issue_resp.json().await.map_err(|e| {
+        tracing::warn!("[build_ticket_context] parse issue: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let title = issue_val["title"].as_str().unwrap_or("(no title)");
+    let state = issue_val["state"].as_str().unwrap_or("unknown");
+    let body = issue_val["body"].as_str().unwrap_or("");
+    let labels: Vec<&str> = issue_val["labels"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|l| l["name"].as_str())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Fetch comments
+    let comments_val: Vec<serde_json::Value> = client
+        .get(format!(
+            "{}/repos/weli/tickets/issues/{ticket_number}/comments",
+            config::gitea_api_base()
+        ))
+        .header("Authorization", auth.as_str())
+        .send()
+        .await
+        .map_err(|e| {
+            tracing::warn!("[build_ticket_context] comments fetch error: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .json()
+        .await
+        .map_err(|e| {
+            tracing::warn!("[build_ticket_context] parse comments: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    let mut ctx = String::new();
+    ctx.push_str(&format!("# 当前工单 #{ticket_number}\n"));
+    ctx.push_str(&format!("标题: {title}\n"));
+    ctx.push_str(&format!("状态: {state}\n"));
+    if !labels.is_empty() {
+        ctx.push_str(&format!("标签: {}\n", labels.join(", ")));
+    }
+    ctx.push_str(&format!("\n## 工单内容\n{body}\n"));
+
+    // Include comments (non-bot, non-system)
+    if !comments_val.is_empty() {
+        ctx.push_str("\n## 工单评论\n");
+        for comment in &comments_val {
+            let user = comment["user"]["login"].as_str().unwrap_or("unknown");
+            let cbody = comment["body"].as_str().unwrap_or("");
+            let created = comment["created_at"].as_str().unwrap_or("");
+            ctx.push_str(&format!("- **{user}** ({created}):\n{cbody}\n\n"));
+        }
+    }
+
+    // Look for linked projects in the ticket body (## 关联项目 section)
+    let projects = read_projects().await.unwrap_or_default();
+    let linked: Vec<&Project> = projects
+        .iter()
+        .filter(|p| body.contains(&p.name))
+        .collect();
+
+    if !linked.is_empty() {
+        ctx.push_str("\n## 关联项目\n");
+        for p in &linked {
+            ctx.push_str(&format!("- **{}**", p.name));
+            if let Some(ref url) = p.repo_url {
+                ctx.push_str(&format!(" ({url})"));
+            }
+            ctx.push('\n');
+            if let Some(ref doc) = p.memory_doc {
+                ctx.push_str(&format!(
+                    "  Memory: {}...\n",
+                    if doc.len() > 200 {
+                        format!("{}...", &doc[..200])
+                    } else {
+                        doc.clone()
+                    }
+                ));
+            }
+        }
+    }
+
+    Ok(ctx)
+}
+
 pub async fn agent_prompt(
     Json(req): Json<AgentPromptReq>,
 ) -> Result<Json<HtyResponse<String>>, StatusCode> {
     let session = req
         .session
-        .unwrap_or_else(|| std::env::var("TMUX_SESSION_NAME").unwrap_or_else(|_| "work".to_string()));
+        .unwrap_or_else(|| std::env::var("TMUX_SESSION_NAME").or_else(|_| std::env::var("TMUX_DEFAULT_SESSION")).unwrap_or_else(|_| "deepseek".to_string()));
 
     if !crate::agent::AgentBackend::validate_session(&session) {
         return Err(StatusCode::BAD_REQUEST);
     }
+
+    // Build final prompt: if ticket_number is provided, prepend ticket context
+    let final_prompt = if let Some(ticket_num) = req.ticket_number {
+        match build_ticket_context(ticket_num).await {
+            Ok(ctx) => format!("{}\n\n{}\n\n{}", config::claude_prompt_prefix(), ctx, req.prompt),
+            Err(_) => {
+                // If context fetch fails, fall back to plain prompt
+                tracing::warn!("[agent_prompt] failed to fetch ticket context for #{}, proceeding without context", ticket_num);
+                req.prompt
+            }
+        }
+    } else {
+        req.prompt
+    };
 
     let backend = crate::agent::AgentBackend::from_env();
 
@@ -937,7 +1059,7 @@ pub async fn agent_prompt(
     }
 
     // Send prompt (with trailing Enter / newline)
-    if let Err(e) = backend.send_keys(&session, &format!("{}\n", req.prompt)).await {
+    if let Err(e) = backend.send_keys(&session, &format!("{final_prompt}\n")).await {
         let msg = format!("Agent send error: {e}");
         return Ok(Json(HtyResponse {
             r: false,
