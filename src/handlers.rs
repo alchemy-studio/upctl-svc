@@ -1055,6 +1055,11 @@ async fn build_ticket_context(ticket_number: i64) -> Result<String, StatusCode> 
             if let Some(ref url) = p.repo_url {
                 ctx.push_str(&format!(" ({url})"));
             }
+            if p.is_open_source {
+                ctx.push_str(" [开源]");
+            } else {
+                ctx.push_str(" [私有]");
+            }
             ctx.push('\n');
             if let Some(ref doc) = p.memory_doc {
                 ctx.push_str(&format!(
@@ -1065,6 +1070,13 @@ async fn build_ticket_context(ticket_number: i64) -> Result<String, StatusCode> 
                         doc.clone()
                     }
                 ));
+            }
+            // Open source warning
+            if p.is_open_source {
+                ctx.push_str("  ⚠️ 注意：这是一个开源项目。\n");
+                ctx.push_str("  1. 不要有任何密文泄漏（API key、密码、token 等）\n");
+                ctx.push_str("  2. 保持业务独立性，不要混入其他业务相关代码\n");
+                ctx.push_str("  3. 确保不包含其他项目的业务逻辑\n");
             }
         }
     }
@@ -1252,6 +1264,8 @@ pub struct Project {
     pub name: String,
     pub repo_url: Option<String>,
     pub memory_doc: Option<String>,
+    #[serde(default)]
+    pub is_open_source: bool,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -1261,6 +1275,8 @@ pub struct CreateProjectReq {
     pub name: String,
     pub repo_url: Option<String>,
     pub memory_doc: Option<String>,
+    #[serde(default)]
+    pub is_open_source: bool,
 }
 
 #[derive(serde::Deserialize)]
@@ -1268,6 +1284,7 @@ pub struct UpdateProjectReq {
     pub name: Option<String>,
     pub repo_url: Option<String>,
     pub memory_doc: Option<String>,
+    pub is_open_source: Option<bool>,
 }
 
 fn projects_path() -> std::path::PathBuf {
@@ -1329,6 +1346,7 @@ pub async fn create_project(
         name: req.name,
         repo_url: req.repo_url,
         memory_doc: req.memory_doc,
+        is_open_source: req.is_open_source,
         created_at: now.clone(),
         updated_at: now,
     };
@@ -1359,6 +1377,9 @@ pub async fn update_project(
     }
     if req.memory_doc.is_some() {
         projects[idx].memory_doc = req.memory_doc;
+    }
+    if let Some(val) = req.is_open_source {
+        projects[idx].is_open_source = val;
     }
     projects[idx].updated_at = now.clone();
     write_projects(&projects).await?;
