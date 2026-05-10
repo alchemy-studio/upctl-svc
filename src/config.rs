@@ -61,6 +61,37 @@ pub fn set_claude_prompt_prefix(text: &str) -> std::io::Result<String> {
     Ok(result)
 }
 
+/// Read the stored memory directory from disk.
+/// Falls back to env var `AGENT_MEMORY_DIR`, then to the hardcoded default.
 pub fn agent_memory_dir() -> String {
+    // Try stored file first
+    let path = std::path::Path::new(&data_dir()).join("memory_dir.txt");
+    if path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            let trimmed = content.trim().to_string();
+            if !trimmed.is_empty() {
+                return trimmed;
+            }
+        }
+    }
+    // Fall back to env var
     env::var("AGENT_MEMORY_DIR").unwrap_or_else(|_| "/Users/weli/.claude/projects/-Users-weli-works-huiwing-migration/memory".to_string())
+}
+
+/// Persist a custom memory directory to disk.
+/// If empty, clears the stored value and falls back to env/default.
+pub fn set_agent_memory_dir(text: &str) -> std::io::Result<String> {
+    let data_dir = data_dir();
+    let dir = std::path::Path::new(&data_dir);
+    std::fs::create_dir_all(dir)?;
+    let path = dir.join("memory_dir.txt");
+    let trimmed = text.trim();
+    std::fs::write(&path, trimmed)?;
+    let result = if trimmed.is_empty() {
+        let _ = std::fs::remove_file(&path);
+        env::var("AGENT_MEMORY_DIR").unwrap_or_else(|_| "/Users/weli/.claude/projects/-Users-weli-works-huiwing-migration/memory".to_string())
+    } else {
+        trimmed.to_string()
+    };
+    Ok(result)
 }

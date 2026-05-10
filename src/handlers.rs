@@ -5,7 +5,7 @@ use axum::extract::{Path, Query};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::Json;
 use htycommons::common::{HtyErr, HtyErrCode, HtyResponse};
-use htycommons::web::{wrap_ok_resp, HtyToken, HtySudoerTokenHeader};
+use htycommons::web::{wrap_ok_resp, HtyToken};
 use hmac::{Hmac, Mac};
 use serde::Deserialize;
 use sha2::Sha256;
@@ -1158,7 +1158,7 @@ pub async fn agent_prompt(
     }
 }
 
-// ── Prompt prefix management ───────────────────────────────────
+// ── Config: prompt prefix + memory dir ────────────────────────
 
 /// GET /api/v2/upctl/api/config/prompt-prefix — read current prompt prefix
 pub async fn get_prompt_prefix() -> Json<HtyResponse<serde_json::Value>> {
@@ -1175,7 +1175,6 @@ pub struct SetPromptPrefixReq {
 }
 
 pub async fn set_prompt_prefix(
-    _sudoer: HtySudoerTokenHeader,
     token: HtyToken,
     Json(req): Json<SetPromptPrefixReq>,
 ) -> Result<Json<HtyResponse<serde_json::Value>>, StatusCode> {
@@ -1185,6 +1184,40 @@ pub async fn set_prompt_prefix(
     match config::set_claude_prompt_prefix(&req.prefix) {
         Ok(actual) => Ok(Json(wrap_ok_resp(serde_json::json!({
             "prefix": actual,
+        })))),
+        Err(e) => Ok(Json(HtyResponse {
+            r: false,
+            d: None,
+            e: Some(format!("Failed to save: {e}")),
+            hty_err: None,
+        })),
+    }
+}
+
+/// GET /api/v2/upctl/api/config/memory-dir — read current memory directory
+pub async fn get_memory_dir() -> Json<HtyResponse<serde_json::Value>> {
+    let dir = config::agent_memory_dir();
+    Json(wrap_ok_resp(serde_json::json!({
+        "memory_dir": dir,
+    })))
+}
+
+/// PUT /api/v2/upctl/api/config/memory-dir — update memory directory (ADMIN only)
+#[derive(serde::Deserialize)]
+pub struct SetMemoryDirReq {
+    pub memory_dir: String,
+}
+
+pub async fn set_memory_dir(
+    token: HtyToken,
+    Json(req): Json<SetMemoryDirReq>,
+) -> Result<Json<HtyResponse<serde_json::Value>>, StatusCode> {
+    if !is_system_admin(&token) {
+        return Ok(Json(forbidden_resp("Admin role required")));
+    }
+    match config::set_agent_memory_dir(&req.memory_dir) {
+        Ok(actual) => Ok(Json(wrap_ok_resp(serde_json::json!({
+            "memory_dir": actual,
         })))),
         Err(e) => Ok(Json(HtyResponse {
             r: false,
@@ -1267,7 +1300,6 @@ pub async fn list_projects() -> Json<HtyResponse<Vec<Project>>> {
 
 /// POST /api/v2/upctl/api/projects — create a project (ADMIN only)
 pub async fn create_project(
-    _sudoer: HtySudoerTokenHeader,
     token: HtyToken,
     Json(req): Json<CreateProjectReq>,
 ) -> Result<Json<HtyResponse<serde_json::Value>>, StatusCode> {
@@ -1291,7 +1323,6 @@ pub async fn create_project(
 
 /// PATCH /api/v2/upctl/api/projects/{id} — update a project (ADMIN only)
 pub async fn update_project(
-    _sudoer: HtySudoerTokenHeader,
     token: HtyToken,
     Path(id): Path<String>,
     Json(req): Json<UpdateProjectReq>,
@@ -1320,7 +1351,6 @@ pub async fn update_project(
 
 /// DELETE /api/v2/upctl/api/projects/{id} — delete a project (ADMIN only)
 pub async fn delete_project(
-    _sudoer: HtySudoerTokenHeader,
     token: HtyToken,
     Path(id): Path<String>,
 ) -> Result<Json<HtyResponse<serde_json::Value>>, StatusCode> {

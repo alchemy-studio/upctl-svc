@@ -84,10 +84,14 @@ async fn main() -> anyhow::Result<()> {
             "/api/v2/upctl/api/agent/prompt",
             post(handlers::agent_prompt),
         )
-        // Config: custom prompt prefix
+        // Config: custom prompt prefix + memory dir
         .route(
             "/api/v2/upctl/api/config/prompt-prefix",
             get(handlers::get_prompt_prefix).put(handlers::set_prompt_prefix),
+        )
+        .route(
+            "/api/v2/upctl/api/config/memory-dir",
+            get(handlers::get_memory_dir).put(handlers::set_memory_dir),
         )
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024));
 
