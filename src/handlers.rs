@@ -766,22 +766,19 @@ pub async fn upload_attachment(
     ))))
 }
 
-/// GET /api/v2/upctl/api/attachment/{filename} — serve uploaded file (requires JWT query param)
+/// GET /api/v2/upctl/api/attachment/{filename} — serve uploaded file
+///
+/// No auth required. Filenames are UUID-based and effectively unguessable.
+/// Images must be embeddable in markdown (<img> tags can't send custom
+/// headers), so JWT-based auth is not feasible here.
 pub async fn serve_attachment(
     Path(filename): Path<String>,
-    Query(params): Query<AttachmentQuery>,
 ) -> Result<(HeaderMap, Vec<u8>), (StatusCode, &'static str)> {
     if !filename
         .chars()
         .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
     {
         return Err((StatusCode::BAD_REQUEST, "invalid filename"));
-    }
-
-    let jwt_str = params.jwt.as_ref().ok_or((StatusCode::UNAUTHORIZED, "missing jwt"))?;
-    let token = jwt_decode_token(jwt_str).map_err(|_| (StatusCode::UNAUTHORIZED, "invalid jwt"))?;
-    if !is_admin_or_tester(&token) {
-        return Err((StatusCode::FORBIDDEN, "insufficient permissions"));
     }
 
     let upload_dir = std::path::Path::new("./uploads");
@@ -813,10 +810,6 @@ pub async fn serve_attachment(
     Ok((headers, data))
 }
 
-#[derive(Deserialize)]
-pub struct AttachmentQuery {
-    pub jwt: Option<String>,
-}
 
 // ── Agent / tmux handlers ─────────────────────────────────────
 
