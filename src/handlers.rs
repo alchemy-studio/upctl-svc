@@ -968,7 +968,7 @@ pub async fn agent_send_keys(
         return Err(StatusCode::BAD_REQUEST);
     }
     let backend = crate::agent::AgentBackend::from_env();
-    match backend.send_keys(&session, &req.keys).await {
+    match backend.send_keys(&session, &req.keys, false).await {
         Ok(()) => Ok(Json(wrap_ok_resp("keys sent".to_string()))),
         Err(e) => {
             let msg = e.to_string();
@@ -1139,10 +1139,15 @@ pub async fn agent_prompt(
 
     // Build memory instruction — tells the agent where to find project memory files
     let memory_dir = config::agent_memory_dir();
-    let memory_instruction = format!(
-        "## Memory 上下文\n先读取 memory 文件了解项目背景。执行:\ncat {dir}/MEMORY.md\n\n根据工单内容再有针对性地 cat 具体 memory 文件。\n",
-        dir = memory_dir,
-    );
+    let memory_instruction = if memory_dir.is_empty() {
+        tracing::warn!("[agent_prompt] memory_dir is not configured; memory instruction will be omitted from prompt");
+        String::new()
+    } else {
+        format!(
+            "## Memory 上下文\n先读取 memory 文件了解项目背景。执行:\ncat {dir}/MEMORY.md\n\n根据工单内容再有针对性地 cat 具体 memory 文件。\n",
+            dir = memory_dir,
+        )
+    };
 
     // Build final prompt: if ticket_number is provided, prepend ticket context
     let final_prompt = if let Some(ticket_num) = req.ticket_number {

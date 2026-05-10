@@ -61,33 +61,51 @@ impl AgentBackend {
     }
 
     /// Send keystrokes to a tmux session.
-    pub async fn send_keys(&self, session: &str, keys: &str) -> Result<(), AgentError> {
+    /// When `literal` is true, uses `-l` to send text as-is without key-name interpretation.
+    /// Uses `--` before the keys to prevent tmux from interpreting text as flags.
+    pub async fn send_keys(&self, session: &str, keys: &str, literal: bool) -> Result<(), AgentError> {
+        let mut args = vec!["send-keys"];
+        if literal {
+            args.push("-l");
+        }
+        args.push("-t");
+        args.push(session);
+        args.push("--");
+        args.push(keys);
         match self {
             AgentBackend::Local => {
-                tmux_cmd(&["send-keys", "-t", session, keys]).await
+                tmux_cmd(&args).await
             }
             AgentBackend::Ssh { host, jump, opts } => {
                 // Shell-escape the keys to prevent fish/bash from interpreting
                 // special characters (>, <, |, $, newlines, etc.) as commands.
                 let escaped = shell_escape_for_ssh(keys);
-                tmux_cmd_ssh(host, jump.as_deref(), opts, &["send-keys", "-t", session, &escaped])
+                let mut ssh_args = vec!["send-keys"];
+                if literal {
+                    ssh_args.push("-l");
+                }
+                ssh_args.push("-t");
+                ssh_args.push(session);
+                ssh_args.push("--");
+                ssh_args.push(&escaped);
+                tmux_cmd_ssh(host, jump.as_deref(), opts, &ssh_args)
                     .await
             }
         }
     }
 
     /// Send a prompt to the agent TUI with two-step submit.
-    /// First types the text, then presses Enter separately — avoids
-    /// timing issues with DeepSeek TUI where text+Enter in one send-keys
-    /// leaves the prompt in draft without submitting.
+    /// First types the text (literal mode), then presses Enter separately.
     pub async fn send_prompt(&self, session: &str, prompt: &str) -> Result<(), AgentError> {
-        // Step 1: type the prompt text
-        self.send_keys(session, prompt).await?;
+        // Step 1: type the prompt text (literal mode — handles -, [, etc.)
+        self.send_keys(session, prompt, true).await?;
         // Brief pause to let the TUI process the text input
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        // Step 2: press Enter to submit
-        self.send_keys(session, "Enter").await
+        // Step 2: press Enter to submit (NOT literal — "Enter" is a key name)
+        self.send_keys(session, "Enter", false).await
     }
+
+
 
     /// Capture pane output from a tmux session (last 200 lines).
     pub async fn capture_pane(&self, session: &str) -> Result<String, AgentError> {
