@@ -1031,18 +1031,35 @@ pub async fn agent_prompt(
         return Err(StatusCode::BAD_REQUEST);
     }
 
+    // Build memory instruction — tells the agent where to find project memory files
+    let memory_dir = config::agent_memory_dir();
+    let memory_instruction = format!(
+        "## Memory 上下文\n先读取 memory 文件了解项目背景。执行:\ncat {dir}/MEMORY.md\n\n根据工单内容再有针对性地 cat 具体 memory 文件。\n",
+        dir = memory_dir,
+    );
+
     // Build final prompt: if ticket_number is provided, prepend ticket context
     let final_prompt = if let Some(ticket_num) = req.ticket_number {
         match build_ticket_context(ticket_num).await {
-            Ok(ctx) => format!("{}\n\n{}\n\n{}", config::claude_prompt_prefix(), ctx, req.prompt),
+            Ok(ctx) => format!(
+                "{}\n\n{}\n\n{}\n\n{}",
+                config::claude_prompt_prefix(),
+                memory_instruction,
+                ctx,
+                req.prompt,
+            ),
             Err(_) => {
-                // If context fetch fails, fall back to plain prompt
                 tracing::warn!("[agent_prompt] failed to fetch ticket context for #{}, proceeding without context", ticket_num);
                 req.prompt
             }
         }
     } else {
-        req.prompt
+        format!(
+            "{}\n\n{}\n\n{}",
+            config::claude_prompt_prefix(),
+            memory_instruction,
+            req.prompt,
+        )
     };
 
     let backend = crate::agent::AgentBackend::from_env();

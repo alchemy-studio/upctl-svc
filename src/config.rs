@@ -28,3 +28,7 @@ pub fn data_dir() -> String {
 pub fn claude_prompt_prefix() -> String {
     env::var("AGENT_PROMPT_PREFIX").unwrap_or_else(|_| "不要进入plan mode，直接干活\n\n".to_string())
 }
+
+pub fn agent_memory_dir() -> String {
+    env::var("AGENT_MEMORY_DIR").unwrap_or_else(|_| "/Users/weli/.claude/projects/-Users-weli-works-huiwing-migration/memory".to_string())
+}
