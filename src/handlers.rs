@@ -1128,7 +1128,10 @@ pub async fn agent_prompt(
     }
     let session = req
         .session
-        .unwrap_or_else(|| std::env::var("TMUX_SESSION_NAME").or_else(|_| std::env::var("TMUX_DEFAULT_SESSION")).unwrap_or_else(|_| "deepseek".to_string()));
+        .unwrap_or_else(|| std::env::var("AGENT_SESSION").or_else(|_| std::env::var("TMUX_DEFAULT_SESSION")).unwrap_or_else(|_| "deepseek".to_string()));
+    // Note: TMUX_SESSION_NAME is deliberately NOT used here because tmux
+    // automatically sets this variable inside tmux sessions, which can
+    // accidentally override the intended agent session name (regression).
 
     if !crate::agent::AgentBackend::validate_session(&session) {
         return Err(StatusCode::BAD_REQUEST);
@@ -1241,7 +1244,7 @@ pub async fn set_prompt_prefix(
     token: HtyToken,
     Json(req): Json<SetPromptPrefixReq>,
 ) -> Result<Json<HtyResponse<serde_json::Value>>, StatusCode> {
-    if !is_system_admin(&token) {
+    if !is_admin_or_tester(&token) {
         return Ok(Json(forbidden_resp("Admin role required")));
     }
     match config::set_claude_prompt_prefix(&req.prefix) {
@@ -1275,7 +1278,7 @@ pub async fn set_memory_dir(
     token: HtyToken,
     Json(req): Json<SetMemoryDirReq>,
 ) -> Result<Json<HtyResponse<serde_json::Value>>, StatusCode> {
-    if !is_system_admin(&token) {
+    if !is_admin_or_tester(&token) {
         return Ok(Json(forbidden_resp("Admin role required")));
     }
     match config::set_agent_memory_dir(&req.memory_dir) {
@@ -1371,7 +1374,7 @@ pub async fn create_project(
     token: HtyToken,
     Json(req): Json<CreateProjectReq>,
 ) -> Result<Json<HtyResponse<serde_json::Value>>, StatusCode> {
-    if !is_system_admin(&token) {
+    if !is_admin_or_tester(&token) {
         return Ok(Json(forbidden_resp("Admin role required")));
     }
     let mut projects = read_projects().await?;
@@ -1396,7 +1399,7 @@ pub async fn update_project(
     Path(id): Path<String>,
     Json(req): Json<UpdateProjectReq>,
 ) -> Result<Json<HtyResponse<serde_json::Value>>, StatusCode> {
-    if !is_system_admin(&token) {
+    if !is_admin_or_tester(&token) {
         return Ok(Json(forbidden_resp("Admin role required")));
     }
     let mut projects = read_projects().await?;
@@ -1426,7 +1429,7 @@ pub async fn delete_project(
     token: HtyToken,
     Path(id): Path<String>,
 ) -> Result<Json<HtyResponse<serde_json::Value>>, StatusCode> {
-    if !is_system_admin(&token) {
+    if !is_admin_or_tester(&token) {
         return Ok(Json(forbidden_resp("Admin role required")));
     }
     let mut projects = read_projects().await?;
