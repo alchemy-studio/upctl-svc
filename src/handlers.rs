@@ -5,7 +5,7 @@ use axum::extract::{Path, Query};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::Json;
 use htycommons::common::{HtyErr, HtyErrCode, HtyResponse};
-use htycommons::web::{wrap_ok_resp, HtyToken};
+use htycommons::web::{wrap_ok_resp, HtyToken, HtySudoerTokenHeader};
 use hmac::{Hmac, Mac};
 use serde::Deserialize;
 use sha2::Sha256;
@@ -543,22 +543,6 @@ pub async fn gitea_add_comment(
             e: Some("Closed tickets do not accept comments".to_string()),
             hty_err: None,
         }));
-    }
-
-    // Lock check: approved or in_progress labels block comments
-    if let Some(labels) = issue_val["labels"].as_array() {
-        let lock_names = ["approved", "in_progress"];
-        let locked = labels.iter().any(|l| {
-            l["name"].as_str().map_or(false, |n| lock_names.contains(&n))
-        });
-        if locked {
-            return Ok(Json(HtyResponse {
-                r: false,
-                d: None,
-                e: Some("该工单已锁定，无法添加评论".to_string()),
-                hty_err: None,
-            }));
-        }
     }
 
     let body = if let Some(ref name) = req.submitter_name {
@@ -1191,6 +1175,7 @@ pub struct SetPromptPrefixReq {
 }
 
 pub async fn set_prompt_prefix(
+    _sudoer: HtySudoerTokenHeader,
     token: HtyToken,
     Json(req): Json<SetPromptPrefixReq>,
 ) -> Result<Json<HtyResponse<serde_json::Value>>, StatusCode> {
@@ -1282,6 +1267,7 @@ pub async fn list_projects() -> Json<HtyResponse<Vec<Project>>> {
 
 /// POST /api/v2/upctl/api/projects — create a project (ADMIN only)
 pub async fn create_project(
+    _sudoer: HtySudoerTokenHeader,
     token: HtyToken,
     Json(req): Json<CreateProjectReq>,
 ) -> Result<Json<HtyResponse<serde_json::Value>>, StatusCode> {
@@ -1305,6 +1291,7 @@ pub async fn create_project(
 
 /// PATCH /api/v2/upctl/api/projects/{id} — update a project (ADMIN only)
 pub async fn update_project(
+    _sudoer: HtySudoerTokenHeader,
     token: HtyToken,
     Path(id): Path<String>,
     Json(req): Json<UpdateProjectReq>,
@@ -1333,6 +1320,7 @@ pub async fn update_project(
 
 /// DELETE /api/v2/upctl/api/projects/{id} — delete a project (ADMIN only)
 pub async fn delete_project(
+    _sudoer: HtySudoerTokenHeader,
     token: HtyToken,
     Path(id): Path<String>,
 ) -> Result<Json<HtyResponse<serde_json::Value>>, StatusCode> {
