@@ -1124,8 +1124,8 @@ async fn build_ticket_context(ticket_number: i64) -> Result<String, StatusCode> 
             if let Some(ref doc) = p.memory_doc {
                 ctx.push_str(&format!(
                     "  Memory: {}...\n",
-                    if doc.len() > 200 {
-                        format!("{}...", &doc[..200])
+                    if doc.chars().count() > 200 {
+                        format!("{}...", doc.chars().take(200).collect::<String>())
                     } else {
                         doc.clone()
                     }
