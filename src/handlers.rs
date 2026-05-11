@@ -226,6 +226,12 @@ pub async fn gitea_list_tickets(
         })?;
 
     let status = resp.status();
+    let total_count: Option<i64> = resp
+        .headers()
+        .get("X-Total-Count")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse().ok());
+
     let body = resp.text().await.map_err(|e| {
         tracing::warn!("[gitea_list_tickets] read body: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
@@ -306,10 +312,14 @@ pub async fn gitea_list_tickets(
         });
     }
 
-    Ok(Json(wrap_ok_resp(serde_json::json!({
+    let mut result = serde_json::json!({
         "tickets": tickets,
         "claude_prompt_prefix": config::claude_prompt_prefix(),
-    }))))
+    });
+    if let Some(total) = total_count {
+        result["total_count"] = serde_json::json!(total);
+    }
+    Ok(Json(wrap_ok_resp(result)))
 }
 
 /// GET /api/v2/upctl/api/tickets/labels — list Gitea labels with colors
