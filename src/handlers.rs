@@ -1477,6 +1477,121 @@ pub async fn update_project(
     Ok(Json(wrap_ok_resp(serde_json::json!(projects[idx]))))
 }
 
+// ── Deploy environment management ─────────────────────────────
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct DeployEnv {
+    pub id: String,
+    pub name: String,
+    pub domain: Option<String>,
+    pub description: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(serde::Deserialize)]
+pub struct CreateDeployEnvReq {
+    pub name: String,
+    pub domain: Option<String>,
+    pub description: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct UpdateDeployEnvReq {
+    pub name: Option<String>,
+    pub domain: Option<String>,
+    pub description: Option<String>,
+}
+
+fn deploy_envs_path() -> std::path::PathBuf {
+    std::path::Path::new(&crate::config::data_dir()).join("deploy_envs.json")
+}
+
+async fn read_deploy_envs() -> Result<Vec<DeployEnv>, StatusCode> {
+    let path = deploy_envs_path();
+    if !path.exists() { return Ok(Vec::new()); }
+    let data = tokio::fs::read_to_string(&path).await.map_err(|e| {
+        tracing::warn!("[deploy_env] read error: {e}"); StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    serde_json::from_str(&data).map_err(|e| {
+        tracing::warn!("[deploy_env] parse error: {e}"); StatusCode::INTERNAL_SERVER_ERROR
+    })
+}
+
+async fn write_deploy_envs(envs: &[DeployEnv]) -> Result<(), StatusCode> {
+    let path = deploy_envs_path();
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent).await.map_err(|e| {
+            tracing::warn!("[deploy_env] create dir error: {e}"); StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    }
+    let data = serde_json::to_string_pretty(envs).map_err(|e| {
+        tracing::warn!("[deploy_env] serialize error: {e}"); StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    tokio::fs::write(&path, &data).await.map_err(|e| {
+        tracing::warn!("[deploy_env] write error: {e}"); StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    Ok(())
+}
+
+/// GET /api/v2/upctl/api/deploy_envs
+pub async fn list_deploy_envs() -> Json<HtyResponse<Vec<DeployEnv>>> {
+    let envs = read_deploy_envs().await.unwrap_or_default();
+    Json(wrap_ok_resp(envs))
+}
+
+/// POST /api/v2/upctl/api/deploy_envs — create (ADMIN)
+pub async fn create_deploy_env(
+    token: HtyToken,
+    Json(req): Json<CreateDeployEnvReq>,
+) -> Result<Json<HtyResponse<serde_json::Value>>, StatusCode> {
+    if !is_admin_or_tester(&token) { return Ok(Json(forbidden_resp("Admin role required"))); }
+    let mut envs = read_deploy_envs().await?;
+    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let env = DeployEnv {
+        id: uuid::Uuid::new_v4().to_string(),
+        name: req.name,
+        domain: req.domain,
+        description: req.description,
+        created_at: now.clone(),
+        updated_at: now,
+    };
+    envs.push(env.clone());
+    write_deploy_envs(&envs).await?;
+    Ok(Json(wrap_ok_resp(serde_json::json!(env))))
+}
+
+/// PUT /api/v2/upctl/api/deploy_envs/{id} — update (ADMIN)
+pub async fn update_deploy_env(
+    token: HtyToken,
+    Path(id): Path<String>,
+    Json(req): Json<UpdateDeployEnvReq>,
+) -> Result<Json<HtyResponse<serde_json::Value>>, StatusCode> {
+    if !is_admin_or_tester(&token) { return Ok(Json(forbidden_resp("Admin role required"))); }
+    let mut envs = read_deploy_envs().await?;
+    let idx = envs.iter().position(|e| e.id == id).ok_or(StatusCode::NOT_FOUND)?;
+    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    if let Some(v) = req.name { envs[idx].name = v; }
+    if let Some(v) = req.domain { envs[idx].domain = Some(v); }
+    if let Some(v) = req.description { envs[idx].description = Some(v); }
+    envs[idx].updated_at = now;
+    write_deploy_envs(&envs).await?;
+    Ok(Json(wrap_ok_resp(serde_json::json!(envs[idx]))))
+}
+
+/// DELETE /api/v2/upctl/api/deploy_envs/{id} — delete (ADMIN)
+pub async fn delete_deploy_env(
+    token: HtyToken,
+    Path(id): Path<String>,
+) -> Result<Json<HtyResponse<serde_json::Value>>, StatusCode> {
+    if !is_admin_or_tester(&token) { return Ok(Json(forbidden_resp("Admin role required"))); }
+    let mut envs = read_deploy_envs().await?;
+    let idx = envs.iter().position(|e| e.id == id).ok_or(StatusCode::NOT_FOUND)?;
+    envs.remove(idx);
+    write_deploy_envs(&envs).await?;
+    Ok(Json(wrap_ok_resp(serde_json::json!({"ok": true}))))
+}
+
 /// DELETE /api/v2/upctl/api/projects/{id} — delete a project (ADMIN only)
 pub async fn delete_project(
     token: HtyToken,

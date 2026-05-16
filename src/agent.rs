@@ -1,4 +1,5 @@
 use std::process::Stdio;
+use tokio::io::AsyncWriteExt;
 
 #[derive(Debug)]
 pub struct AgentError(pub String);
@@ -63,33 +64,78 @@ impl AgentBackend {
     /// Send keystrokes to a tmux session.
     /// When `literal` is true, uses `-l` to send text as-is without key-name interpretation.
     /// Uses `--` before the keys to prevent tmux from interpreting text as flags.
-    pub async fn send_keys(&self, session: &str, keys: &str, literal: bool) -> Result<(), AgentError> {
-        let mut args = vec!["send-keys"];
-        if literal {
-            args.push("-l");
-        }
-        args.push("-t");
-        args.push(session);
-        args.push("--");
-        args.push(keys);
+    /// Send keystrokes to a tmux session.
+/// When `literal` is true, uses `-l` to send text as-is without key-name interpretation.
+/// Uses `--` before the keys to prevent tmux from interpreting text as flags.
+///
+/// For SSH backend with long text, writes the keys to a temp file first to avoid
+/// SSH command-line length limits ("command too long" error), then reads from file.
+pub async fn send_keys(&self, session: &str, keys: &str, literal: bool) -> Result<(), AgentError> {
         match self {
             AgentBackend::Local => {
+                let mut args = vec!["send-keys"];
+                if literal {
+                    args.push("-l");
+                }
+                args.push("-t");
+                args.push(session);
+                args.push("--");
+                args.push(keys);
                 tmux_cmd(&args).await
             }
             AgentBackend::Ssh { host, jump, opts } => {
-                // Shell-escape the keys to prevent fish/bash from interpreting
-                // special characters (>, <, |, $, newlines, etc.) as commands.
-                let escaped = shell_escape_for_ssh(keys);
-                let mut ssh_args = vec!["send-keys"];
-                if literal {
-                    ssh_args.push("-l");
+                // Short non-literal keys (e.g. "Enter") go through direct send-keys.
+                if !literal && keys.len() < 20 {
+                    let mut ssh_args = vec!["send-keys"];
+                    ssh_args.push("-t");
+                    ssh_args.push(session);
+                    ssh_args.push("--");
+                    ssh_args.push(keys);
+                    return tmux_cmd_ssh(host, jump.as_deref(), opts, &ssh_args).await;
                 }
-                ssh_args.push("-t");
-                ssh_args.push(session);
-                ssh_args.push("--");
-                ssh_args.push(&escaped);
-                tmux_cmd_ssh(host, jump.as_deref(), opts, &ssh_args)
-                    .await
+
+                // Long literal text: combine ALL operations in a SINGLE SSH command.
+                // This avoids a race where separate SSH connections might behave differently
+                // (file not found, different tmux socket, etc.).
+                let tmpfile = format!("/tmp/tmux_send_{}", uuid::Uuid::new_v4());
+                let escaped_key = shell_escape_for_ssh(&tmpfile);
+
+                // Build a single bash script that writes the prompt to a temp file via stdin,
+                // loads it into tmux buffer, pastes it, then cleans up.
+                let combined_cmd = format!(
+                    "cat > {} && tmux load-buffer -b watchdog_buf {} && tmux paste-buffer -d -b watchdog_buf -t {} && rm -f {}",
+                    escaped_key, escaped_key, session, escaped_key
+                );
+
+                // Use synchronous std::process::Command for stdin piping — tokio's async
+                // pipe handling can have issues with SSH's stdin forwarding.
+                let mut c = std::process::Command::new("ssh");
+                for opt in opts {
+                    c.arg(opt);
+                }
+                if let Some(j) = jump {
+                    c.args(["-J", j]);
+                }
+                c.arg(host);
+                c.arg("bash");
+                c.arg("-l");
+                c.arg("-c");
+                c.arg(&combined_cmd);
+                c.stdin(std::process::Stdio::piped());
+                let mut child = c.spawn()
+                    .map_err(|e| AgentError(format!("ssh spawn (combined): {e}")))?;
+                if let Some(mut stdin) = child.stdin.take() {
+                    // Use std::io::Write for synchronous write — this blocks the async
+                    // thread but avoids tokio pipe issues with SSH.
+                    std::io::Write::write_all(&mut stdin, keys.as_bytes())
+                        .map_err(|e| format!("ssh stdin write: {e}"))?;
+                }
+                let status = child.wait()
+                    .map_err(|e| format!("ssh wait (combined): {e}"))?;
+                if !status.success() {
+                    return Err(AgentError("tmux paste failed".to_string()));
+                }
+                Ok(())
             }
         }
     }
@@ -99,8 +145,9 @@ impl AgentBackend {
     pub async fn send_prompt(&self, session: &str, prompt: &str) -> Result<(), AgentError> {
         // Step 1: type the prompt text (literal mode — handles -, [, etc.)
         self.send_keys(session, prompt, true).await?;
-        // Brief pause to let the TUI process the text input
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        // Longer pause for SSH backend — the paste-buffer approach needs time to
+        // complete multiple SSH round trips before we send Enter.
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         // Step 2: press Enter to submit (NOT literal — "Enter" is a key name)
         self.send_keys(session, "Enter", false).await?;
         // Extra Enter to ensure the prompt is submitted even if the first one was eaten
@@ -215,9 +262,6 @@ async fn tmux_cmd_output(args: &[&str]) -> Result<String, AgentError> {
 // ── SSH tmux helpers ──────────────────────────────────────────
 
 /// Wrap text in single quotes for safe passage through the remote shell.
-/// Single quotes prevent ALL shell interpretation (variable expansion,
-/// globbing, redirection).  Embedded single quotes are handled with
-/// the standard '\'' (end quote, escaped quote, resume quote) sequence.
 fn shell_escape_for_ssh(text: &str) -> String {
     let escaped = text.replace('\'', "'\\''");
     format!("'{}'", escaped)

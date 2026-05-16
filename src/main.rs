@@ -71,6 +71,15 @@ async fn main() -> anyhow::Result<()> {
             "/api/v2/upctl/api/projects/{id}",
             patch(handlers::update_project).delete(handlers::delete_project),
         )
+        // Deploy environment endpoints
+        .route(
+            "/api/v2/upctl/api/deploy_envs",
+            get(handlers::list_deploy_envs).post(handlers::create_deploy_env),
+        )
+        .route(
+            "/api/v2/upctl/api/deploy_envs/{id}",
+            patch(handlers::update_deploy_env).delete(handlers::delete_deploy_env),
+        )
         // Agent / tmux endpoints
         .route(
             "/api/v2/upctl/api/tmux/{session}",
