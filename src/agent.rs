@@ -141,9 +141,10 @@ pub async fn send_keys(&self, session: &str, keys: &str, literal: bool) -> Resul
     }
 
     /// Send a prompt to the agent TUI with two-step submit.
-    /// First types the text (literal mode), then presses Enter twice for reliability.
-    /// The second Enter uses a longer delay to avoid interfering with TUI processing
-    /// of the first Enter (which could cause the prompt to be submitted multiple times).
+    /// First types the text (literal mode), then presses Enter. After a short wait,
+    /// detects whether the agent has started processing by comparing two pane captures.
+    /// If the pane content is changing (agent is generating output), the second Enter
+    /// is skipped. If no change is detected, a second Enter is sent as fallback.
     pub async fn send_prompt(&self, session: &str, prompt: &str) -> Result<(), AgentError> {
         // Step 1: type the prompt text (literal mode — handles -, [, etc.)
         self.send_keys(session, prompt, true).await?;
@@ -152,12 +153,30 @@ pub async fn send_keys(&self, session: &str, keys: &str, literal: bool) -> Resul
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         // Step 2: press Enter to submit (NOT literal — "Enter" is a key name)
         self.send_keys(session, "Enter", false).await?;
-        // Extra Enter to ensure the prompt is submitted even if the first one was eaten.
-        // Longer delay (3s) prevents the second Enter from interfering with TUI
-        // processing — a short delay could cause the TUI to interpret it as a
-        // duplicate submission or confirmation of an intermediate prompt.
-        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-        self.send_keys(session, "Enter", false).await
+
+        // Step 3: detect if agent has started processing.
+        // Wait for agent to begin responding, then capture pane twice.
+        // If the content changes between captures, the agent is generating output
+        // and the prompt was successfully received — skip the second Enter.
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        let agent_working = match self.capture_pane(session).await {
+            Ok(first) => {
+                tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+                match self.capture_pane(session).await {
+                    Ok(second) => first != second,
+                    Err(_) => false,
+                }
+            }
+            Err(_) => false,
+        };
+
+        if !agent_working {
+            // Fallback: agent may not have received the prompt.
+            // Send a second Enter as a safety net.
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            self.send_keys(session, "Enter", false).await?;
+        }
+        Ok(())
     }
 
 
