@@ -859,6 +859,8 @@ pub async fn upload_attachment(
         "application/msword" => "doc",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => "docx",
         "text/plain" => "txt",
+        "video/mp4" => "mp4",
+        "video/quicktime" => "mov",
         _ => "bin",
     };
 
@@ -1151,6 +1153,33 @@ pub async fn agent_prompt(
     if !is_admin_or_tester(&token) {
         return Err(StatusCode::UNAUTHORIZED);
     }
+
+    // Require a ticket_number: only ticket-linked prompts should reach the agent.
+    // Prompts without a ticket context (e.g. from scripts, loops, or stale triggers)
+    // cause the agent to repeatedly see the prompt_prefix without actionable content.
+    let ticket_num = match req.ticket_number {
+        Some(n) => n,
+        None => {
+            tracing::warn!(
+                "[agent_prompt] rejected — no ticket_number; prompt='{}' ({} chars)",
+                &req.prompt.chars().take(100).collect::<String>(),
+                req.prompt.len(),
+            );
+            return Ok(Json(HtyResponse {
+                r: false,
+                d: None,
+                e: Some("ticket_number is required — only ticket-linked prompts are accepted".to_string()),
+                hty_err: None,
+            }));
+        }
+    };
+
+    tracing::info!(
+        "[agent_prompt] ticket=#{ticket_num} prompt_len={} session={}",
+        req.prompt.len(),
+        req.session.as_deref().unwrap_or("default"),
+    );
+
     let session = req
         .session
         .unwrap_or_else(|| std::env::var("AGENT_SESSION").or_else(|_| std::env::var("TMUX_DEFAULT_SESSION")).unwrap_or_else(|_| "deepseek".to_string()));
